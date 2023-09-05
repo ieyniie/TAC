@@ -7,13 +7,13 @@ import argparse
 import gpuRIR
 
 # generate audio files
-def generate_data(output_path='', avoid_clipping=0, dataset='adhoc', libri_path='/home/yi/data/Librispeech', noise_path='/home/yi/data/Nonspeech'):
+def generate_data(output_path='/data/datasets', avoid_clipping=0, dataset='fixed', libri_path='/home/zjlab/datasets/Librispeech', noise_path='/data/datasets/Nonspeech'):
     assert dataset in ['adhoc', 'fixed'], "dataset can only be adhoc or fixed."
     
     if output_path == '':
         output_path = os.getcwd()
     
-    data_type = ['train', 'validation', 'test']
+    data_type = ['test'] # 'train', 'validation', 
     for i in range(len(data_type)):
         # path for config
         config_path = os.path.join('configs', 'MC_Libri_'+dataset+'_'+data_type[i]+'.pkl')
@@ -33,7 +33,7 @@ def generate_data(output_path='', avoid_clipping=0, dataset='adhoc', libri_path=
             # load audio files
             speakers = this_config['speech']
             noise = this_config['noise']
-            spk1, _ = sf.read(os.path.join(libri_path, speakers[0]))
+            spk1, _ = sf.read(os.path.join(libri_path, speakers[0])) #.replace('.flac','-norm.wav')
             spk2, _ = sf.read(os.path.join(libri_path, speakers[1]))
             noise, _ = sf.read(os.path.join(noise_path, noise))
 
@@ -85,6 +85,10 @@ def generate_data(output_path='', avoid_clipping=0, dataset='adhoc', libri_path=
                 nmic = this_config['num_mic']
             else:
                 nmic = 6
+
+            spk1_sig = np.zeros((sr*sig_len,nmic),dtype=np.float32)
+            spk2_sig = np.zeros((sr*sig_len,nmic),dtype=np.float32)
+            mix_sig = np.zeros((sr*sig_len,nmic),dtype=np.float32)
             for mic in range(nmic):
                 spk1_echoic_sig = signal.fftconvolve(spk1, spk_rir[0][mic])
                 spk2_echoic_sig = signal.fftconvolve(spk2, spk_rir[1][mic])
@@ -116,14 +120,16 @@ def generate_data(output_path='', avoid_clipping=0, dataset='adhoc', libri_path=
                     mixture = mixture / max_scale * 0.9
                     spk1_echoic_sig = spk1_echoic_sig / max_scale * 0.9
                     spk2_echoic_sig = spk2_echoic_sig / max_scale * 0.9
-            
-                # save waveforms
-                this_save_dir = os.path.join(output_path, 'MC_Libri_'+dataset, data_type[i], str(num_mic)+'mic', 'sample'+str(utt+1))
-                if not os.path.exists(this_save_dir):
-                    os.makedirs(this_save_dir)
-                sf.write(os.path.join(this_save_dir, 'spk1_mic'+str(mic+1)+'.wav'), spk1_echoic_sig, sr)
-                sf.write(os.path.join(this_save_dir, 'spk2_mic'+str(mic+1)+'.wav'), spk2_echoic_sig, sr)
-                sf.write(os.path.join(this_save_dir, 'mixture_mic'+str(mic+1)+'.wav'), mixture, sr)
+                spk1_sig[:,mic] = spk1_echoic_sig
+                spk2_sig[:,mic] = spk2_echoic_sig
+                mix_sig[:,mic] = mixture
+            # save waveforms
+            this_save_dir = os.path.join(output_path, 'MC_Libri_'+dataset, data_type[i], str(num_mic)+'mic', 'sample'+str(utt+1))
+            if not os.path.exists(this_save_dir):
+                os.makedirs(this_save_dir)
+            sf.write(os.path.join(this_save_dir, 'spk1_mic'+'.wav'), spk1_sig, sr) # +str(mic+1)
+            sf.write(os.path.join(this_save_dir, 'spk2_mic'+'.wav'), spk2_sig, sr)
+            sf.write(os.path.join(this_save_dir, 'mixture_mic'+'.wav'), mix_sig, sr)
                 
             # print progress
             if (utt+1) % (len(configs) // 5) == 0:
@@ -133,15 +139,17 @@ def generate_data(output_path='', avoid_clipping=0, dataset='adhoc', libri_path=
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Generate multi-channel Librispeech data')
-    parser.add_argument('--output-path', metavar='absolute path', required=False, default='',
+    parser.add_argument('--output-path', metavar='absolute path', required=False, default='/data/datasets',
                         help="The path to the output directory. Default is the current directory.")
     parser.add_argument('--avoid-clipping', metavar='avoid clipping', required=False, default=0,
                         help="Whether to avoid clipping when saving the waveforms. 0: no clipping. 1: clipping.")
-    parser.add_argument('--dataset', metavar='dataset type', required=True,
+    parser.add_argument('--dataset', metavar='dataset type', required=False,default='fixed',
                         help="The type of dataset to generate. Can only be 'adhoc' or 'fixed'.")
-    parser.add_argument('--libri-path', metavar='absolute path', required=True,
+    parser.add_argument('--libri-path', metavar='absolute path', required=False,
+                        default='/home/zjlab/datasets/LibriSpeech',
                         help="Absolute path for Librispeech folder containing train-clean-100, dev-clean and test-clean folders.")
-    parser.add_argument('--noise-path', metavar='absolute path', required=True,
+    parser.add_argument('--noise-path', metavar='absolute path', required=False,
+                        default='/data/datasets/Nonspeech',
                         help="Absolute path for the 100 Nonspeech sound folder.")
     args = parser.parse_args()
     generate_data(output_path=args.output_path, dataset=args.dataset, libri_path=args.libri_path, noise_path=args.noise_path)
